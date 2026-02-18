@@ -4,13 +4,11 @@ strategic analysis, anomaly detection, and recommendations.
 """
 
 import json
-import httpx
 import logging
 
 logger = logging.getLogger("ads-digest.analyzer")
 
-CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
-MODEL = "claude-sonnet-4-5-20250514"
+MODEL = "claude-sonnet-4-5-20250929"
 
 
 class AIAnalyzer:
@@ -21,26 +19,18 @@ class AIAnalyzer:
         self, meta_data: dict, google_data: dict, shopify_data: dict,
         date: str, brand: str,
     ) -> dict:
+        import anthropic
+
         prompt = self._build_prompt(meta_data, google_data, shopify_data, date, brand)
 
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                CLAUDE_API_URL,
-                headers={
-                    "x-api-key": self.api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": MODEL,
-                    "max_tokens": 4096,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-            )
-            resp.raise_for_status()
-            result = resp.json()
+        client = anthropic.Anthropic(api_key=self.api_key)
+        message = client.messages.create(
+            model=MODEL,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
 
-        raw_text = result["content"][0]["text"]
+        raw_text = message.content[0].text
 
         try:
             if "```json" in raw_text:
@@ -90,7 +80,7 @@ IMPORTANT: Shopify is the SOURCE OF TRUTH for actual revenue. Ad platforms (Meta
 Provide your analysis as a JSON object with EXACTLY these keys:
 
 {{
-    "executive_summary": "2-3 sentence overview. Use Shopify revenue as the real number. Mention true blended ROAS (Shopify revenue ÷ total ad spend). Flag if ad platforms are significantly over-reporting.",
+    "executive_summary": "2-3 sentence overview. Use Shopify revenue as the real number. Mention true blended ROAS (Shopify revenue / total ad spend). Flag if ad platforms are significantly over-reporting.",
 
     "meta_analysis": "Meta ads performance. Spend efficiency, ROAS by campaign, CPM trends, over/under-performers.",
 
