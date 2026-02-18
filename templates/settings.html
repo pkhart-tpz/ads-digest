@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div style="font-size:24px;font-weight:800;color:#fff;margin-bottom:4px;">⚙️ Settings</div>
+<div style="font-size:13px;color:#6b7280;margin-bottom:24px;">Your credentials are stored securely on this server. They are never shared externally.</div>
+
+<form method="POST" action="{{ url_for('settings_page') }}" autocomplete="off">
+
+    <!-- Brand -->
+    <div class="card">
+        <div class="section-title">🏷️ Brand</div>
+        <div class="form-group">
+            <label class="form-label">Brand Name</label>
+            <input type="text" name="BRAND_NAME" class="form-input {{ 'has-value' if settings.BRAND_NAME }}" value="{{ settings.BRAND_NAME }}" placeholder="SMBL">
+        </div>
+    </div>
+
+    <!-- Shopify -->
+    <div class="card">
+        <div class="section-title" style="color:#22c55e;">🛒 Shopify (Dev Dashboard)</div>
+        <p style="font-size:12px;color:#6b7280;margin-bottom:16px;">Uses the new Dev Dashboard flow. The app auto-requests a fresh token each run.</p>
+        <div class="form-group">
+            <label class="form-label">Shop Domain <span style="color:#ef4444">*</span></label>
+            <input type="text" name="SHOPIFY_SHOP_DOMAIN" class="form-input {{ 'has-value' if settings.SHOPIFY_SHOP_DOMAIN }}" value="{{ settings.SHOPIFY_SHOP_DOMAIN }}" placeholder="your-store.myshopify.com">
+            <div class="form-help">Found in your browser URL when logged into Shopify admin</div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Client ID <span style="color:#ef4444">*</span></label>
+            <input type="text" name="SHOPIFY_CLIENT_ID" class="form-input {{ 'has-value' if settings.SHOPIFY_CLIENT_ID }}" value="{{ settings.SHOPIFY_CLIENT_ID }}" placeholder="From Dev Dashboard → Settings">
+            <div class="form-help">Open your app in the Dev Dashboard, click Settings</div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Client Secret <span style="color:#ef4444">*</span></label>
+            <input type="password" name="SHOPIFY_CLIENT_SECRET" class="form-input {{ 'has-value' if settings.SHOPIFY_CLIENT_SECRET }}" value="{{ settings.SHOPIFY_CLIENT_SECRET }}" placeholder="shpss_...">
+            {% if masked.SHOPIFY_CLIENT_SECRET and settings.SHOPIFY_CLIENT_SECRET %}
+                <div class="form-help">Current: {{ masked.SHOPIFY_CLIENT_SECRET }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Anthropic -->
+    <div class="card">
+        <div class="section-title" style="color:#a855f7;">🧠 Claude AI (Anthropic)</div>
+        <p style="font-size:12px;color:#6b7280;margin-bottom:16px;">Powers the AI analysis. ~$0.05 per daily report.</p>
+        <div class="form-group">
+            <label class="form-label">API Key <span style="color:#ef4444">*</span></label>
+            <input type="password" name="ANTHROPIC_API_KEY" class="form-input {{ 'has-value' if settings.ANTHROPIC_API_KEY }}" value="{{ settings.ANTHROPIC_API_KEY }}" placeholder="sk-ant-...">
+            <div class="form-help">From console.anthropic.com → API Keys</div>
+            {% if masked.ANTHROPIC_API_KEY and settings.ANTHROPIC_API_KEY %}
+                <div class="form-help">Current: {{ masked.ANTHROPIC_API_KEY }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Meta -->
+    <div class="card">
+        <div class="section-title" style="color:#3b82f6;">📱 Meta (Facebook/Instagram) Ads</div>
+        <p style="font-size:12px;color:#6b7280;margin-bottom:16px;">System User token from Meta Business Suite. Expires every 60 days.</p>
+        <div class="form-group">
+            <label class="form-label">Access Token <span style="color:#ef4444">*</span></label>
+            <input type="password" name="META_ACCESS_TOKEN" class="form-input {{ 'has-value' if settings.META_ACCESS_TOKEN }}" value="{{ settings.META_ACCESS_TOKEN }}" placeholder="EAA...">
+            <div class="form-help">From Business Settings → System Users → Generate Token</div>
+            {% if masked.META_ACCESS_TOKEN and settings.META_ACCESS_TOKEN %}
+                <div class="form-help">Current: {{ masked.META_ACCESS_TOKEN }}</div>
+            {% endif %}
+        </div>
+        <div class="form-group">
+            <label class="form-label">Ad Account ID <span style="color:#ef4444">*</span></label>
+            <input type="text" name="META_AD_ACCOUNT_ID" class="form-input {{ 'has-value' if settings.META_AD_ACCOUNT_ID }}" value="{{ settings.META_AD_ACCOUNT_ID }}" placeholder="act_123456789">
+            <div class="form-help">Include the "act_" prefix. Found in Ads Manager URL.</div>
+        </div>
+    </div>
+
+    <!-- Google Ads -->
+    <div class="card">
+        <div class="section-title" style="color:#f59e0b;">🔍 Google Ads <span class="badge badge-yellow" style="margin-left:8px;">Optional</span></div>
+        <p style="font-size:12px;color:#6b7280;margin-bottom:16px;">Skip these if you don't run Google Ads — the digest will still work with Meta + Shopify.</p>
+        <div class="form-group">
+            <label class="form-label">OAuth Client ID</label>
+            <input type="text" name="GOOGLE_CLIENT_ID" class="form-input {{ 'has-value' if settings.GOOGLE_CLIENT_ID }}" value="{{ settings.GOOGLE_CLIENT_ID }}" placeholder="...apps.googleusercontent.com">
+        </div>
+        <div class="form-group">
+            <label class="form-label">OAuth Client Secret</label>
+            <input type="password" name="GOOGLE_CLIENT_SECRET" class="form-input {{ 'has-value' if settings.GOOGLE_CLIENT_SECRET }}" value="{{ settings.GOOGLE_CLIENT_SECRET }}" placeholder="GOCSPX-...">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Refresh Token</label>
+            <input type="password" name="GOOGLE_REFRESH_TOKEN" class="form-input {{ 'has-value' if settings.GOOGLE_REFRESH_TOKEN }}" value="{{ settings.GOOGLE_REFRESH_TOKEN }}" placeholder="1//...">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Customer ID</label>
+            <input type="text" name="GOOGLE_CUSTOMER_ID" class="form-input {{ 'has-value' if settings.GOOGLE_CUSTOMER_ID }}" value="{{ settings.GOOGLE_CUSTOMER_ID }}" placeholder="1234567890 (no dashes)">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Developer Token</label>
+            <input type="password" name="GOOGLE_DEVELOPER_TOKEN" class="form-input {{ 'has-value' if settings.GOOGLE_DEVELOPER_TOKEN }}" value="{{ settings.GOOGLE_DEVELOPER_TOKEN }}" placeholder="From Google Ads → Tools → API Center">
+        </div>
+    </div>
+
+    <!-- Email -->
+    <div class="card">
+        <div class="section-title" style="color:#ec4899;">✉️ Email Delivery</div>
+        <p style="font-size:12px;color:#6b7280;margin-bottom:16px;">For Gmail, use an app password (not your regular password).</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div class="form-group">
+                <label class="form-label">SMTP Host</label>
+                <input type="text" name="SMTP_HOST" class="form-input {{ 'has-value' if settings.SMTP_HOST }}" value="{{ settings.SMTP_HOST }}" placeholder="smtp.gmail.com">
+            </div>
+            <div class="form-group">
+                <label class="form-label">SMTP Port</label>
+                <input type="text" name="SMTP_PORT" class="form-input {{ 'has-value' if settings.SMTP_PORT }}" value="{{ settings.SMTP_PORT }}" placeholder="587">
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">SMTP Username <span style="color:#ef4444">*</span></label>
+            <input type="text" name="SMTP_USER" class="form-input {{ 'has-value' if settings.SMTP_USER }}" value="{{ settings.SMTP_USER }}" placeholder="you@gmail.com">
+        </div>
+        <div class="form-group">
+            <label class="form-label">SMTP Password <span style="color:#ef4444">*</span></label>
+            <input type="password" name="SMTP_PASSWORD" class="form-input {{ 'has-value' if settings.SMTP_PASSWORD }}" value="{{ settings.SMTP_PASSWORD }}" placeholder="16-char app password">
+            <div class="form-help">The 16-character app password from myaccount.google.com/apppasswords</div>
+            {% if masked.SMTP_PASSWORD and settings.SMTP_PASSWORD %}
+                <div class="form-help">Current: {{ masked.SMTP_PASSWORD }}</div>
+            {% endif %}
+        </div>
+        <div class="form-group">
+            <label class="form-label">From Email <span style="color:#ef4444">*</span></label>
+            <input type="text" name="FROM_EMAIL" class="form-input {{ 'has-value' if settings.FROM_EMAIL }}" value="{{ settings.FROM_EMAIL }}" placeholder="you@gmail.com">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Send Reports To <span style="color:#ef4444">*</span></label>
+            <input type="text" name="RECIPIENT_EMAILS" class="form-input {{ 'has-value' if settings.RECIPIENT_EMAILS }}" value="{{ settings.RECIPIENT_EMAILS }}" placeholder="you@email.com, partner@email.com">
+            <div class="form-help">Comma-separated list of email addresses</div>
+        </div>
+    </div>
+
+    <!-- Schedule -->
+    <div class="card">
+        <div class="section-title" style="color:#06b6d4;">⏰ Schedule</div>
+        <p style="font-size:12px;color:#6b7280;margin-bottom:16px;">When to automatically run the daily digest.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+            <div class="form-group">
+                <label class="form-label">Hour (0-23)</label>
+                <input type="number" name="SCHEDULE_HOUR" class="form-input" value="{{ settings.SCHEDULE_HOUR }}" min="0" max="23" style="font-family:'DM Sans',sans-serif;">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Minute (0-59)</label>
+                <input type="number" name="SCHEDULE_MINUTE" class="form-input" value="{{ settings.SCHEDULE_MINUTE }}" min="0" max="59" style="font-family:'DM Sans',sans-serif;">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Timezone</label>
+                <input type="text" name="SCHEDULE_TIMEZONE" class="form-input" value="{{ settings.SCHEDULE_TIMEZONE }}" placeholder="America/Denver">
+                <div class="form-help">e.g. America/Denver, America/Los_Angeles, US/Mountain</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save -->
+    <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">Cancel</a>
+        <button type="submit" class="btn btn-success">💾 Save Settings</button>
+    </div>
+
+</form>
+{% endblock %}

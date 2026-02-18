@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: tpz-ads-digest
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --preload
+    healthCheckPath: /health
+    envVars:
+      - key: DASHBOARD_PASSWORD
+        generateValue: true
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: DATA_DIR
+        value: /tmp/ads-digest-data

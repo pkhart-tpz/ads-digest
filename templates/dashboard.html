@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Status Bar -->
+<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;align-items:center;">
+    <div style="flex:1;">
+        <div style="font-size:24px;font-weight:800;color:#fff;">{{ brand }} Dashboard</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;">
+            {% if next_run %}
+                Next report: {{ next_run.strftime('%b %d at %I:%M %p %Z') }}
+            {% else %}
+                No schedule configured
+            {% endif %}
+        </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+        <form method="POST" action="{{ url_for('run_now') }}" style="display:inline;">
+            <input type="hidden" name="test" value="1">
+            <button type="submit" class="btn btn-ghost btn-sm">🧪 Test Run</button>
+        </form>
+        <form method="POST" action="{{ url_for('run_now') }}" style="display:inline;">
+            <button type="submit" class="btn btn-primary btn-sm">▶ Run Now</button>
+        </form>
+    </div>
+</div>
+
+<!-- Integration Status -->
+<div class="card" style="padding:16px 20px;">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:12px;color:#6b7280;font-weight:600;">Integrations:</span>
+
+        <span class="badge {{ 'badge-green' if integrations.shopify else 'badge-red' }}">
+            🛒 Shopify {{ '✓' if integrations.shopify else '✗' }}
+        </span>
+        <span class="badge {{ 'badge-green' if integrations.meta else 'badge-red' }}">
+            📱 Meta {{ '✓' if integrations.meta else '✗' }}
+        </span>
+        <span class="badge {{ 'badge-green' if integrations.google else 'badge-yellow' }}">
+            🔍 Google {{ '✓' if integrations.google else 'Optional' }}
+        </span>
+        <span class="badge {{ 'badge-green' if integrations.ai else 'badge-red' }}">
+            🧠 AI {{ '✓' if integrations.ai else '✗' }}
+        </span>
+        <span class="badge {{ 'badge-green' if integrations.email else 'badge-red' }}">
+            ✉️ Email {{ '✓' if integrations.email else '✗' }}
+        </span>
+
+        {% if not integrations.ai or not integrations.email %}
+            <a href="{{ url_for('settings_page') }}" style="font-size:11px;margin-left:auto;">Set up missing integrations →</a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Reports -->
+{% if reports %}
+    <!-- Latest report stats -->
+    {% set latest = reports[0] %}
+    <div class="stat-grid" style="margin-bottom:20px;">
+        <div class="stat-card">
+            <div class="stat-label">Latest Revenue</div>
+            <div class="stat-value green">${{ "%.2f"|format(latest.revenue) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Orders</div>
+            <div class="stat-value">{{ latest.orders }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Ad Spend</div>
+            <div class="stat-value yellow">${{ "%.2f"|format(latest.spend) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">True ROAS</div>
+            {% set roas = (latest.revenue / latest.spend)|round(2) if latest.spend > 0 else 0 %}
+            <div class="stat-value {{ 'green' if roas >= 3 else 'yellow' if roas >= 2 else '' }}" style="{{ 'color:#f87171' if roas < 2 else '' }}">{{ roas }}x</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="section-title">📋 Report History</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Brand</th>
+                    <th style="text-align:right;">Revenue</th>
+                    <th style="text-align:right;">Spend</th>
+                    <th style="text-align:right;">ROAS</th>
+                    <th style="text-align:right;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for report in reports %}
+                <tr>
+                    <td style="font-weight:600;color:#fff;">{{ report.date }}</td>
+                    <td>{{ report.brand }}</td>
+                    <td style="text-align:right;color:#4ade80;font-weight:600;">${{ "%.2f"|format(report.revenue) }}</td>
+                    <td style="text-align:right;">${{ "%.2f"|format(report.spend) }}</td>
+                    <td style="text-align:right;">
+                        {% set r = (report.revenue / report.spend)|round(2) if report.spend > 0 else 0 %}
+                        <span style="color:{{ '#4ade80' if r >= 3 else '#fbbf24' if r >= 2 else '#f87171' }};font-weight:700;">{{ r }}x</span>
+                    </td>
+                    <td style="text-align:right;">
+                        <a href="{{ url_for('view_report', filename=report.filename) }}" class="btn btn-ghost btn-sm" target="_blank">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+{% else %}
+    <div class="card">
+        <div class="empty-state">
+            <div class="icon">📊</div>
+            <h3>No reports yet</h3>
+            <p>Set up your integrations in Settings, then click "Run Now" or "Test Run" to generate your first report.</p>
+            <div style="margin-top:20px;display:flex;gap:8px;justify-content:center;">
+                <a href="{{ url_for('settings_page') }}" class="btn btn-primary">⚙️ Go to Settings</a>
+                <form method="POST" action="{{ url_for('run_now') }}" style="display:inline;">
+                    <input type="hidden" name="test" value="1">
+                    <button type="submit" class="btn btn-ghost">🧪 Test with Sample Data</button>
+                </form>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
+<!-- Run for specific date -->
+<div class="card" style="padding:16px 20px;">
+    <form method="POST" action="{{ url_for('run_now') }}" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:#6b7280;font-weight:600;">Run for specific date:</span>
+        <input type="date" name="date" class="form-input" style="width:auto;font-family:'DM Sans',sans-serif;" value="{{ (import('datetime').datetime.now() - import('datetime').timedelta(days=1)).strftime('%Y-%m-%d') if false else '' }}">
+        <button type="submit" class="btn btn-ghost btn-sm">Run</button>
+    </form>
+</div>
+{% endblock %}

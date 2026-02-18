@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Ads Digest{% endblock %} — TPZ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #08080f;
+            color: #e4e4eb;
+            min-height: 100vh;
+        }
+        a { color: #818cf8; text-decoration: none; }
+        a:hover { color: #a5b4fc; }
+
+        .nav {
+            background: linear-gradient(135deg, #0c0c1d, #12122e);
+            border-bottom: 1px solid #1e1e3a;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            height: 56px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .nav-brand {
+            font-size: 14px;
+            font-weight: 800;
+            color: #fff;
+            margin-right: 32px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nav-brand span { color: #6366f1; font-size: 11px; font-weight: 700; letter-spacing: 2px; }
+        .nav-links { display: flex; gap: 4px; flex: 1; }
+        .nav-links a {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #9ca3af;
+            transition: all 0.2s;
+        }
+        .nav-links a:hover { background: #1e1e3a; color: #fff; }
+        .nav-links a.active { background: #6366f120; color: #818cf8; }
+        .nav-right { font-size: 12px; color: #6b7280; }
+
+        .container { max-width: 900px; margin: 0 auto; padding: 24px; }
+
+        .card {
+            background: #0d0d20;
+            border: 1px solid #1e1e3a;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+
+        .flash {
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .flash.success { background: #052e16; border: 1px solid #166534; color: #4ade80; }
+        .flash.error { background: #1a0a0a; border: 1px solid #7f1d1d; color: #f87171; }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary { background: #6366f1; color: #fff; }
+        .btn-primary:hover { background: #7c7ff5; }
+        .btn-success { background: #22c55e; color: #fff; }
+        .btn-success:hover { background: #2dd66b; }
+        .btn-ghost { background: #1e1e3a; color: #d1d5db; }
+        .btn-ghost:hover { background: #2a2a4e; }
+        .btn-danger { background: #dc2626; color: #fff; }
+        .btn-danger:hover { background: #ef4444; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+        .form-group { margin-bottom: 16px; }
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #d1d5db;
+            margin-bottom: 6px;
+        }
+        .form-help { font-size: 11px; color: #4b5563; margin-top: 4px; }
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            background: #0a0a18;
+            border: 1px solid #1e1e3a;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 13px;
+            font-family: 'JetBrains Mono', monospace;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-input:focus { border-color: #6366f1; }
+        .form-input.has-value { border-color: #22c55e40; }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #6366f1;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #1e1e3a;
+        }
+
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+        .stat-card {
+            background: #111128;
+            border: 1px solid #1e1e3a;
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .stat-value { font-size: 22px; font-weight: 800; color: #fff; }
+        .stat-value.green { color: #4ade80; }
+        .stat-value.blue { color: #60a5fa; }
+        .stat-value.yellow { color: #fbbf24; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px 12px; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #1e1e3a; }
+        td { padding: 12px; border-bottom: 1px solid #1e1e3a; font-size: 13px; color: #d1d5db; }
+        tr:hover td { background: #111128; }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        .badge-green { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+        .badge-yellow { background: #1a1a0a; color: #fbbf24; border: 1px solid #854d0e; }
+        .badge-red { background: #1a0a0a; color: #f87171; border: 1px solid #7f1d1d; }
+        .badge-gray { background: #1e1e3a; color: #9ca3af; }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 24px;
+            color: #4b5563;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state h3 { color: #9ca3af; font-size: 18px; margin-bottom: 8px; }
+        .empty-state p { font-size: 13px; line-height: 1.6; max-width: 400px; margin: 0 auto; }
+
+        @media (max-width: 640px) {
+            .container { padding: 16px; }
+            .stat-grid { grid-template-columns: repeat(2, 1fr); }
+            .nav { padding: 0 12px; }
+            .nav-brand { margin-right: 12px; }
+            .nav-links a { padding: 8px 10px; font-size: 12px; }
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">
+            <span>TPZ</span> Ads Digest
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">📊 Dashboard</a>
+            <a href="{{ url_for('settings_page') }}" class="{% if request.endpoint == 'settings_page' %}active{% endif %}">⚙️ Settings</a>
+        </div>
+        <div class="nav-right">
+            {% if session.authenticated %}<a href="{{ url_for('logout') }}" style="color:#6b7280;font-size:12px;">Logout</a>{% endif %}
+        </div>
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
