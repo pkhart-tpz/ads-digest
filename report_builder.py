@@ -101,6 +101,9 @@ class ReportBuilder:
         # Attribution gap color
         gap_color = "#22c55e" if attribution_gap < 15 else "#f59e0b" if attribution_gap < 30 else "#ef4444"
 
+        # Safe cost per order
+        cost_per_order = total_spend / shopify_orders if shopify_orders > 0 else 0
+
         html = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
@@ -170,7 +173,7 @@ class ReportBuilder:
         </div>
         <div style="flex:1;min-width:140px;background:#111128;border-radius:12px;padding:20px;border:1px solid #2a2a4e;text-align:center;">
             <div style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Cost Per Order</div>
-            <div style="font-size:24px;font-weight:800;color:#fff;">${total_spend / shopify_orders:,.2f}</div>
+            <div style="font-size:24px;font-weight:800;color:#fff;">${cost_per_order:,.2f}</div>
         </div>
         <div style="flex:1;min-width:140px;background:#111128;border-radius:12px;padding:20px;border:1px solid #2a2a4e;text-align:center;">
             <div style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Discount Impact</div>
