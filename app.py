@@ -161,6 +161,8 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
     if test_mode:
         meta_data, google_data, shopify_data = get_sample_data()
     else:
+        errors = []
+
         # Meta
         meta_data = {"platform": "meta", "date": date, "account_summary": {}, "campaigns": [], "ad_sets": [], "ads": []}
         if settings.get("META_ACCESS_TOKEN") and settings.get("META_AD_ACCOUNT_ID"):
@@ -171,8 +173,18 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
                 )
                 meta_data = meta_client.get_daily_report(date)
                 logger.info(f"Meta: {len(meta_data.get('campaigns', []))} campaigns")
+                if not meta_data.get("campaigns"):
+                    errors.append(f"Meta: Connected but returned 0 campaigns for {date}. This could mean no ads were running that day, or the token/account ID is wrong.")
             except Exception as e:
-                logger.error(f"Meta error: {e}")
+                errors.append(f"Meta API error: {e}")
+                logger.error(f"Meta error: {e}", exc_info=True)
+        else:
+            missing = []
+            if not settings.get("META_ACCESS_TOKEN"):
+                missing.append("Access Token")
+            if not settings.get("META_AD_ACCOUNT_ID"):
+                missing.append("Ad Account ID")
+            errors.append(f"Meta: Skipped — missing {', '.join(missing)}")
 
         # Google
         google_data = {"platform": "google", "date": date, "account_summary": {}, "campaigns": [], "ad_groups": [], "ads": []}
@@ -188,7 +200,8 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
                 google_data = google_client.get_daily_report(date)
                 logger.info(f"Google: {len(google_data.get('campaigns', []))} campaigns")
             except Exception as e:
-                logger.error(f"Google error: {e}")
+                errors.append(f"Google Ads error: {e}")
+                logger.error(f"Google error: {e}", exc_info=True)
 
         # Shopify
         shopify_data = {"platform": "shopify", "date": date, "summary": {"total_orders": 0, "net_revenue": 0, "average_order_value": 0, "new_customer_rate": 0, "total_discount_amount": 0, "total_revenue": 0, "total_refunds": 0, "total_units_sold": 0, "new_customers": 0, "returning_customers": 0}, "top_products": [], "discount_codes": {}, "hourly_orders": [], "orders": [], "inventory_alerts": []}
@@ -204,7 +217,15 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
                 shopify_data["inventory_alerts"] = inventory_alerts
                 logger.info(f"Shopify: {shopify_data['summary']['total_orders']} orders")
             except Exception as e:
-                logger.error(f"Shopify error: {e}")
+                errors.append(f"Shopify error: {e}")
+                logger.error(f"Shopify error: {e}", exc_info=True)
+
+        # Surface errors as flash messages (only works in web request context)
+        try:
+            for err in errors:
+                flash(err, "error")
+        except RuntimeError:
+            pass  # No request context (scheduled run)
 
     # ── AI Analysis ──────────────────────────────────────
     if not settings.get("ANTHROPIC_API_KEY"):
