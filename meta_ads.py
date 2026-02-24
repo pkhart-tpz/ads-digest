@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger("ads-digest.meta")
 
-API_VERSION = "v21.0"
+API_VERSION = "v22.0"
 BASE_URL = f"https://graph.facebook.com/{API_VERSION}"
 
 
@@ -30,7 +30,9 @@ class MetaAdsClient:
         }
         results = []
         resp = self.session.get(url, params=params)
-        resp.raise_for_status()
+        if not resp.ok:
+            error_body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text
+            raise Exception(f"Meta API {resp.status_code}: {error_body}")
         data = resp.json()
         results.extend(data.get("data", []))
 
