@@ -7,6 +7,7 @@ A hosted dashboard that:
   - Runs the digest automatically every morning
   - Emails the report to your team
   - Has a "Run Now" button for on-demand reports
+  - Shows DoD and WoW performance trends
 
 Deploy to Railway (free) with one click.
 """
@@ -126,23 +127,73 @@ def get_report_list() -> list:
 
 
 def save_report(date: str, brand: str, html: str, meta_data: dict, google_data: dict, shopify_data: dict):
-    """Save a report to disk."""
-    meta_spend = float(meta_data.get("account_summary", {}).get("spend", 0))
-    google_spend = float(google_data.get("account_summary", {}).get("spend", 0))
+    """Save a report with detailed metrics for DoD/WoW comparisons."""
+    meta_summary = meta_data.get("account_summary", {})
+    google_summary = google_data.get("account_summary", {})
+    shop_summary = shopify_data.get("summary", {})
+
+    meta_spend = float(meta_summary.get("spend", 0))
+    google_spend = float(google_summary.get("spend", 0))
+
+    from meta_ads import MetaAdsClient
+    meta_purchases = MetaAdsClient.extract_purchase_metrics(meta_summary)
 
     report = {
         "date": date,
         "brand": brand,
         "generated_at": datetime.now().isoformat(),
         "html": html,
-        "shopify_orders": shopify_data.get("summary", {}).get("total_orders", 0),
-        "shopify_revenue": shopify_data.get("summary", {}).get("net_revenue", 0),
+        # Summary metrics for DoD/WoW
+        "shopify_orders": shop_summary.get("total_orders", 0),
+        "shopify_revenue": shop_summary.get("net_revenue", 0),
+        "shopify_aov": shop_summary.get("average_order_value", 0),
+        "shopify_new_customer_rate": shop_summary.get("new_customer_rate", 0),
+        "shopify_units": shop_summary.get("total_units_sold", 0),
+        "meta_spend": meta_spend,
+        "google_spend": google_spend,
         "total_spend": round(meta_spend + google_spend, 2),
+        "meta_clicks": int(meta_summary.get("clicks", 0)),
+        "google_clicks": int(google_summary.get("clicks", 0)),
+        "meta_roas": meta_purchases["roas"],
+        "meta_purchases": meta_purchases["purchases"],
+        "meta_cpm": float(meta_summary.get("cpm", 0)),
+        "meta_ctr": float(meta_summary.get("ctr", 0)),
+        "google_roas": float(google_summary.get("roas", 0)),
+        "google_conversions": float(google_summary.get("conversions", 0)),
+        "platform_claimed_revenue": meta_purchases["purchase_value"] + float(google_summary.get("conversion_value", 0)),
     }
 
     filename = f"{date}_{brand}.json"
     (REPORTS_DIR / filename).write_text(json.dumps(report))
     return filename
+
+
+def load_comparison_data(date: str, brand: str) -> dict:
+    """Load previous day and previous week data for DoD/WoW comparison."""
+    from datetime import datetime as dt
+
+    target = dt.strptime(date, "%Y-%m-%d")
+    prev_day = (target - timedelta(days=1)).strftime("%Y-%m-%d")
+    prev_week = (target - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    def load_report(d):
+        filepath = REPORTS_DIR / f"{d}_{brand}.json"
+        if filepath.exists():
+            try:
+                data = json.loads(filepath.read_text())
+                # Only return if it has the detailed metrics
+                if "shopify_revenue" in data:
+                    return data
+            except (json.JSONDecodeError, IOError):
+                pass
+        return None
+
+    return {
+        "prev_day": load_report(prev_day),
+        "prev_day_date": prev_day,
+        "prev_week": load_report(prev_week),
+        "prev_week_date": prev_week,
+    }
 
 
 # ── Digest pipeline ──────────────────────────────────────
@@ -174,7 +225,7 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
                 meta_data = meta_client.get_daily_report(date)
                 logger.info(f"Meta: {len(meta_data.get('campaigns', []))} campaigns")
                 if not meta_data.get("campaigns"):
-                    errors.append(f"Meta: Connected but returned 0 campaigns for {date}. This could mean no ads were running that day, or the token/account ID is wrong.")
+                    errors.append(f"Meta: Connected but returned 0 campaigns for {date}.")
             except Exception as e:
                 errors.append(f"Meta API error: {e}")
                 logger.error(f"Meta error: {e}", exc_info=True)
@@ -213,19 +264,20 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
                     client_secret=settings["SHOPIFY_CLIENT_SECRET"],
                 )
                 shopify_data = shopify_client.get_daily_report(date)
-                inventory_alerts = shopify_client.get_inventory_alerts(threshold=10)
-                shopify_data["inventory_alerts"] = inventory_alerts
                 logger.info(f"Shopify: {shopify_data['summary']['total_orders']} orders")
             except Exception as e:
                 errors.append(f"Shopify error: {e}")
                 logger.error(f"Shopify error: {e}", exc_info=True)
 
-        # Surface errors as flash messages (only works in web request context)
+        # Surface errors
         try:
             for err in errors:
                 flash(err, "error")
         except RuntimeError:
-            pass  # No request context (scheduled run)
+            pass
+
+    # ── Load comparison data for DoD/WoW ─────────────────
+    comparison = load_comparison_data(date, brand)
 
     # ── AI Analysis ──────────────────────────────────────
     if not settings.get("ANTHROPIC_API_KEY"):
@@ -238,6 +290,7 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
         shopify_data=shopify_data,
         date=date,
         brand=brand,
+        comparison=comparison,
     )
 
     # ── Build report ─────────────────────────────────────
@@ -249,6 +302,7 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
         analysis=analysis,
         date=date,
         brand=brand,
+        comparison=comparison,
     )
 
     # ── Save report ──────────────────────────────────────
@@ -258,6 +312,7 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
     recipients_raw = settings.get("RECIPIENT_EMAILS", "")
     recipients = [e.strip() for e in recipients_raw.split(",") if e.strip()]
 
+    email_error = None
     if settings.get("SMTP_USER") and settings.get("SMTP_PASSWORD") and recipients:
         try:
             sender = EmailSender(
@@ -267,13 +322,28 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
                 smtp_password=settings["SMTP_PASSWORD"],
                 from_email=settings.get("FROM_EMAIL", settings["SMTP_USER"]),
             )
-            subject = f"📊 {brand} Daily Ads Digest — {date}"
+            subject = f"{brand} Daily Ads Digest — {date}"
             sender.send(to_emails=recipients, subject=subject, html_body=html_report)
             logger.info(f"Email sent to {', '.join(recipients)}")
         except Exception as e:
-            logger.error(f"Email error: {e}")
+            email_error = f"Email failed: {e}"
+            logger.error(f"Email error: {e}", exc_info=True)
     else:
-        logger.warning("Email not configured — skipping send")
+        missing = []
+        if not settings.get("SMTP_USER"):
+            missing.append("SMTP User")
+        if not settings.get("SMTP_PASSWORD"):
+            missing.append("SMTP Password")
+        if not recipients:
+            missing.append("Recipient Emails")
+        email_error = f"Email: Skipped — missing {', '.join(missing)}"
+        logger.warning(email_error)
+
+    if email_error:
+        try:
+            flash(email_error, "error")
+        except RuntimeError:
+            pass
 
     return html_report
 
