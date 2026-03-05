@@ -1,12 +1,32 @@
 """
 Report Builder — generates a beautifully formatted HTML email
-from the raw data and AI analysis. Now includes Shopify source-of-truth data.
+from the raw data and AI analysis. Includes Shopify source-of-truth
+data and DoD/WoW performance comparisons.
 """
 
 from meta_ads import MetaAdsClient
 
 
 class ReportBuilder:
+
+    @staticmethod
+    def _delta(current, previous, fmt="num", invert=False):
+        """Calculate delta and return styled HTML arrow + percentage."""
+        if previous is None or previous == 0:
+            return '<span style="color:#6b7280;font-size:11px;">—</span>'
+        if current is None:
+            current = 0
+        change = ((current - previous) / abs(previous)) * 100
+        # For cost metrics, down is good
+        if invert:
+            color = "#4ade80" if change <= 0 else "#f87171"
+            arrow = "▼" if change < 0 else "▲" if change > 0 else "—"
+        else:
+            color = "#4ade80" if change >= 0 else "#f87171"
+            arrow = "▲" if change > 0 else "▼" if change < 0 else "—"
+        sign = "+" if change > 0 else ""
+        return f'<span style="color:{color};font-size:11px;font-weight:600;">{arrow} {sign}{change:.1f}%</span>'
+
     def build(
         self,
         meta_data: dict,
@@ -15,6 +35,7 @@ class ReportBuilder:
         analysis: dict,
         date: str,
         brand: str,
+        comparison: dict = None,
     ) -> str:
 
         # ── Extract key metrics ──────────────────────────────────
@@ -41,6 +62,19 @@ class ReportBuilder:
         meta_clicks = int(meta_summary.get("clicks", 0))
         google_clicks = int(google_summary.get("clicks", 0))
 
+        # Safe cost per order
+        cost_per_order = total_spend / shopify_orders if shopify_orders > 0 else 0
+
+        # ── Comparison data ──────────────────────────────────────
+        prev_day = (comparison or {}).get("prev_day")
+        prev_week = (comparison or {}).get("prev_week")
+
+        # Calculate previous ROAS for deltas
+        prev_day_roas = round(prev_day["shopify_revenue"] / prev_day["total_spend"], 2) if prev_day and prev_day.get("total_spend", 0) > 0 else None
+        prev_week_roas = round(prev_week["shopify_revenue"] / prev_week["total_spend"], 2) if prev_week and prev_week.get("total_spend", 0) > 0 else None
+        prev_day_cpo = prev_day["total_spend"] / prev_day["shopify_orders"] if prev_day and prev_day.get("shopify_orders", 0) > 0 else None
+        prev_week_cpo = prev_week["total_spend"] / prev_week["shopify_orders"] if prev_week and prev_week.get("shopify_orders", 0) > 0 else None
+
         # Campaign tables
         meta_campaigns_html = self._build_meta_campaign_rows(meta_data.get("campaigns", []))
         google_campaigns_html = self._build_google_campaign_rows(google_data.get("campaigns", []))
@@ -50,25 +84,6 @@ class ReportBuilder:
 
         # Discount codes
         discount_html = self._build_discount_rows(shopify_data.get("discount_codes", {}))
-
-        # Inventory alerts
-        inv_alerts = shopify_data.get("inventory_alerts", [])
-        inventory_html = ""
-        if inv_alerts:
-            rows = ""
-            for item in inv_alerts:
-                color = "#ef4444" if item["quantity_remaining"] <= 3 else "#f59e0b"
-                rows += f"""
-                <tr>
-                    <td style="padding:8px 10px;border-bottom:1px solid #1a1a2e;color:#e0e0e0;font-size:13px;">{item['product']}</td>
-                    <td style="padding:8px 10px;border-bottom:1px solid #1a1a2e;color:#9ca3af;font-size:13px;">{item.get('variant', '')}</td>
-                    <td style="padding:8px 10px;border-bottom:1px solid #1a1a2e;color:{color};font-size:13px;font-weight:700;text-align:right;">{item['quantity_remaining']} left</td>
-                </tr>"""
-            inventory_html = f"""
-            <div style="background:#1a0a0a;border:1px solid #7f1d1d;border-radius:8px;padding:16px 20px;margin:20px 0;">
-                <div style="font-weight:700;color:#f87171;margin-bottom:10px;">🚨 Low Inventory Alert</div>
-                <table style="width:100%;border-collapse:collapse;">{rows}</table>
-            </div>"""
 
         # Anomalies
         anomalies = analysis.get("anomalies", [])
@@ -101,8 +116,52 @@ class ReportBuilder:
         # Attribution gap color
         gap_color = "#22c55e" if attribution_gap < 15 else "#f59e0b" if attribution_gap < 30 else "#ef4444"
 
-        # Safe cost per order
-        cost_per_order = total_spend / shopify_orders if shopify_orders > 0 else 0
+        # ── DoD / WoW Trend Table ────────────────────────────────
+        def trend_row(label, current, prev_d, prev_w, fmt="dollar", invert=False):
+            if fmt == "dollar":
+                val = f"${current:,.2f}"
+            elif fmt == "int":
+                val = f"{current:,}"
+            elif fmt == "pct":
+                val = f"{current:.1f}%"
+            elif fmt == "roas":
+                val = f"{current}x"
+            else:
+                val = str(current)
+
+            dod = self._delta(current, prev_d, invert=invert) if prev_d is not None else '<span style="color:#6b7280;font-size:11px;">—</span>'
+            wow = self._delta(current, prev_w, invert=invert) if prev_w is not None else '<span style="color:#6b7280;font-size:11px;">—</span>'
+
+            return f"""<tr>
+                <td style="padding:10px 12px;border-bottom:1px solid #1a1a2e;color:#d1d5db;font-size:13px;font-weight:600;">{label}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #1a1a2e;color:#fff;font-size:14px;font-weight:700;text-align:right;">{val}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #1a1a2e;text-align:right;">{dod}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #1a1a2e;text-align:right;">{wow}</td>
+            </tr>"""
+
+        trend_rows = ""
+        trend_rows += trend_row("Revenue (Shopify)", shopify_revenue,
+            prev_day.get("shopify_revenue") if prev_day else None,
+            prev_week.get("shopify_revenue") if prev_week else None)
+        trend_rows += trend_row("Orders", shopify_orders,
+            prev_day.get("shopify_orders") if prev_day else None,
+            prev_week.get("shopify_orders") if prev_week else None, fmt="int")
+        trend_rows += trend_row("AOV", shopify_aov,
+            prev_day.get("shopify_aov") if prev_day else None,
+            prev_week.get("shopify_aov") if prev_week else None)
+        trend_rows += trend_row("True ROAS", true_blended_roas,
+            prev_day_roas, prev_week_roas, fmt="roas")
+        trend_rows += trend_row("Total Spend", total_spend,
+            prev_day.get("total_spend") if prev_day else None,
+            prev_week.get("total_spend") if prev_week else None, invert=True)
+        trend_rows += trend_row("Cost Per Order", cost_per_order,
+            prev_day_cpo, prev_week_cpo, invert=True)
+        trend_rows += trend_row("Meta Spend", meta_spend,
+            prev_day.get("meta_spend") if prev_day else None,
+            prev_week.get("meta_spend") if prev_week else None, invert=True)
+        trend_rows += trend_row("New Customer %", new_rate,
+            prev_day.get("shopify_new_customer_rate") if prev_day else None,
+            prev_week.get("shopify_new_customer_rate") if prev_week else None, fmt="pct")
 
         html = f"""<!DOCTYPE html>
 <html>
@@ -150,6 +209,20 @@ class ReportBuilder:
         </div>
     </div>
 
+    <!-- DoD / WoW Trend Table -->
+    <div style="background:#111128;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #2a2a4e;">
+        <div style="font-size:13px;font-weight:700;color:#06b6d4;letter-spacing:1px;text-transform:uppercase;margin-bottom:16px;">📈 Performance Trends</div>
+        <table style="width:100%;border-collapse:collapse;">
+            <tr style="border-bottom:2px solid #2a2a4e;">
+                <th style="text-align:left;padding:8px 12px;color:#9ca3af;font-size:11px;text-transform:uppercase;">Metric</th>
+                <th style="text-align:right;padding:8px 12px;color:#9ca3af;font-size:11px;text-transform:uppercase;">Today</th>
+                <th style="text-align:right;padding:8px 12px;color:#9ca3af;font-size:11px;text-transform:uppercase;">DoD</th>
+                <th style="text-align:right;padding:8px 12px;color:#9ca3af;font-size:11px;text-transform:uppercase;">WoW</th>
+            </tr>
+            {trend_rows}
+        </table>
+    </div>
+
     <!-- Attribution Gap Alert -->
     <div style="background:#111128;border-radius:12px;padding:18px 24px;margin-bottom:24px;border:1px solid #2a2a4e;display:flex;align-items:center;gap:20px;">
         <div>
@@ -181,7 +254,6 @@ class ReportBuilder:
         </div>
     </div>
 
-    {inventory_html}
     {anomalies_html}
 
     <!-- Platform Comparison -->
