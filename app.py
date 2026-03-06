@@ -29,6 +29,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from meta_ads import MetaAdsClient
 from google_ads_client import GoogleAdsClient
 from shopify_client import ShopifyClient
+from klaviyo_client import KlaviyoClient
 from analyzer import AIAnalyzer
 from email_sender import EmailSender
 from report_builder import ReportBuilder
@@ -69,6 +70,7 @@ SETTING_KEYS = [
     "SHOPIFY_SHOP_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET",
     "ANTHROPIC_API_KEY",
     "META_ACCESS_TOKEN", "META_AD_ACCOUNT_ID",
+    "KLAVIYO_API_KEY",
     "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN",
     "GOOGLE_CUSTOMER_ID", "GOOGLE_DEVELOPER_TOKEN",
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
@@ -127,7 +129,7 @@ def get_report_list() -> list:
     return reports[:30]  # Keep last 30
 
 
-def save_report(date: str, brand: str, html: str, meta_data: dict, google_data: dict, shopify_data: dict):
+def save_report(date: str, brand: str, html: str, meta_data: dict, google_data: dict, shopify_data: dict, klaviyo_data: dict = None):
     """Save a report with detailed metrics for DoD/WoW comparisons."""
     meta_summary = meta_data.get("account_summary", {})
     google_summary = google_data.get("account_summary", {})
@@ -162,6 +164,10 @@ def save_report(date: str, brand: str, html: str, meta_data: dict, google_data: 
         "google_roas": float(google_summary.get("roas", 0)),
         "google_conversions": float(google_summary.get("conversions", 0)),
         "platform_claimed_revenue": meta_purchases["purchase_value"] + float(google_summary.get("conversion_value", 0)),
+        "klaviyo_emails_sent": (klaviyo_data or {}).get("summary", {}).get("emails_sent", 0),
+        "klaviyo_revenue": (klaviyo_data or {}).get("summary", {}).get("revenue_attributed", 0),
+        "klaviyo_open_rate": (klaviyo_data or {}).get("summary", {}).get("open_rate", 0),
+        "klaviyo_click_rate": (klaviyo_data or {}).get("summary", {}).get("click_rate", 0),
     }
 
     filename = f"{date}_{brand}.json"
@@ -212,6 +218,7 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
     # ── Pull data ────────────────────────────────────────
     if test_mode:
         meta_data, google_data, shopify_data = get_sample_data()
+        klaviyo_data = {"platform": "klaviyo", "date": date or "sample", "summary": {"emails_sent": 1250, "emails_delivered": 1220, "emails_opened": 488, "emails_clicked": 61, "open_rate": 40.0, "click_rate": 5.0, "unsubscribes": 2, "revenue_attributed": 892.50, "sms_sent": 0, "sms_clicked": 0}, "campaigns": [], "flows_summary": {"emails_sent": 800, "revenue_attributed": 645.00}}
     else:
         errors = []
 
@@ -270,6 +277,19 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
                 errors.append(f"Shopify error: {e}")
                 logger.error(f"Shopify error: {e}", exc_info=True)
 
+        # Klaviyo
+        klaviyo_data = {"platform": "klaviyo", "date": date, "summary": {"emails_sent": 0, "emails_delivered": 0, "emails_opened": 0, "emails_clicked": 0, "open_rate": 0, "click_rate": 0, "unsubscribes": 0, "revenue_attributed": 0, "sms_sent": 0, "sms_clicked": 0}, "campaigns": [], "flows_summary": {"emails_sent": 0, "revenue_attributed": 0}}
+        if settings.get("KLAVIYO_API_KEY"):
+            try:
+                kl_client = KlaviyoClient(
+                    private_api_key=settings["KLAVIYO_API_KEY"],
+                )
+                klaviyo_data = kl_client.get_daily_report(date)
+                logger.info(f"Klaviyo: {klaviyo_data['summary']['emails_sent']} emails sent, ${klaviyo_data['summary']['revenue_attributed']} attributed revenue")
+            except Exception as e:
+                errors.append(f"Klaviyo error: {e}")
+                logger.error(f"Klaviyo error: {e}", exc_info=True)
+
         # Surface errors
         try:
             for err in errors:
@@ -289,6 +309,7 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
         meta_data=meta_data,
         google_data=google_data,
         shopify_data=shopify_data,
+        klaviyo_data=klaviyo_data,
         date=date,
         brand=brand,
         comparison=comparison,
@@ -300,6 +321,7 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
         meta_data=meta_data,
         google_data=google_data,
         shopify_data=shopify_data,
+        klaviyo_data=klaviyo_data,
         analysis=analysis,
         date=date,
         brand=brand,
@@ -307,7 +329,7 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
     )
 
     # ── Save report ──────────────────────────────────────
-    save_report(date, brand, html_report, meta_data, google_data, shopify_data)
+    save_report(date, brand, html_report, meta_data, google_data, shopify_data, klaviyo_data)
 
     # ── Send email ───────────────────────────────────────
     recipients_raw = settings.get("RECIPIENT_EMAILS", "")
@@ -421,6 +443,7 @@ def dashboard():
     integrations = {
         "shopify": bool(settings.get("SHOPIFY_CLIENT_ID") and settings.get("SHOPIFY_CLIENT_SECRET")),
         "meta": bool(settings.get("META_ACCESS_TOKEN") and settings.get("META_AD_ACCOUNT_ID")),
+        "klaviyo": bool(settings.get("KLAVIYO_API_KEY")),
         "google": bool(settings.get("GOOGLE_CLIENT_ID") and settings.get("GOOGLE_REFRESH_TOKEN")),
         "email": bool(settings.get("RESEND_API_KEY") or (settings.get("SMTP_USER") and settings.get("SMTP_PASSWORD"))),
         "ai": bool(settings.get("ANTHROPIC_API_KEY")),
@@ -463,6 +486,7 @@ def settings_page():
     # Mask sensitive values for display
     SENSITIVE_KEYS = [
         "SHOPIFY_CLIENT_SECRET", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
+        "KLAVIYO_API_KEY",
         "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "GOOGLE_DEVELOPER_TOKEN",
         "SMTP_PASSWORD", "RESEND_API_KEY",
     ]
