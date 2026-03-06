@@ -9,7 +9,7 @@ import logging
 
 logger = logging.getLogger("ads-digest.google")
 
-API_VERSION = "v18"
+API_VERSION = "v23"
 BASE_URL = f"https://googleads.googleapis.com/{API_VERSION}"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
