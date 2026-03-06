@@ -72,6 +72,7 @@ SETTING_KEYS = [
     "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN",
     "GOOGLE_CUSTOMER_ID", "GOOGLE_DEVELOPER_TOKEN",
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+    "RESEND_API_KEY",
     "FROM_EMAIL", "RECIPIENT_EMAILS",
     "SCHEDULE_HOUR", "SCHEDULE_MINUTE", "SCHEDULE_TIMEZONE",
 ]
@@ -312,15 +313,19 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
     recipients_raw = settings.get("RECIPIENT_EMAILS", "")
     recipients = [e.strip() for e in recipients_raw.split(",") if e.strip()]
 
+    has_resend = bool(settings.get("RESEND_API_KEY"))
+    has_smtp = bool(settings.get("SMTP_USER") and settings.get("SMTP_PASSWORD"))
+
     email_error = None
-    if settings.get("SMTP_USER") and settings.get("SMTP_PASSWORD") and recipients:
+    if (has_resend or has_smtp) and recipients:
         try:
             sender = EmailSender(
                 smtp_host=settings.get("SMTP_HOST", "smtp.gmail.com"),
                 smtp_port=int(settings.get("SMTP_PORT", "587")),
-                smtp_user=settings["SMTP_USER"],
-                smtp_password=settings["SMTP_PASSWORD"],
-                from_email=settings.get("FROM_EMAIL", settings["SMTP_USER"]),
+                smtp_user=settings.get("SMTP_USER", ""),
+                smtp_password=settings.get("SMTP_PASSWORD", ""),
+                from_email=settings.get("FROM_EMAIL", settings.get("SMTP_USER", "")),
+                resend_api_key=settings.get("RESEND_API_KEY", ""),
             )
             subject = f"{brand} Daily Ads Digest — {date}"
             sender.send(to_emails=recipients, subject=subject, html_body=html_report)
@@ -330,10 +335,8 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
             logger.error(f"Email error: {e}", exc_info=True)
     else:
         missing = []
-        if not settings.get("SMTP_USER"):
-            missing.append("SMTP User")
-        if not settings.get("SMTP_PASSWORD"):
-            missing.append("SMTP Password")
+        if not has_resend and not has_smtp:
+            missing.append("Resend API Key or SMTP credentials")
         if not recipients:
             missing.append("Recipient Emails")
         email_error = f"Email: Skipped — missing {', '.join(missing)}"
@@ -419,7 +422,7 @@ def dashboard():
         "shopify": bool(settings.get("SHOPIFY_CLIENT_ID") and settings.get("SHOPIFY_CLIENT_SECRET")),
         "meta": bool(settings.get("META_ACCESS_TOKEN") and settings.get("META_AD_ACCOUNT_ID")),
         "google": bool(settings.get("GOOGLE_CLIENT_ID") and settings.get("GOOGLE_REFRESH_TOKEN")),
-        "email": bool(settings.get("SMTP_USER") and settings.get("SMTP_PASSWORD")),
+        "email": bool(settings.get("RESEND_API_KEY") or (settings.get("SMTP_USER") and settings.get("SMTP_PASSWORD"))),
         "ai": bool(settings.get("ANTHROPIC_API_KEY")),
     }
 
@@ -461,7 +464,7 @@ def settings_page():
     SENSITIVE_KEYS = [
         "SHOPIFY_CLIENT_SECRET", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
         "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "GOOGLE_DEVELOPER_TOKEN",
-        "SMTP_PASSWORD",
+        "SMTP_PASSWORD", "RESEND_API_KEY",
     ]
     masked = {}
     for key in SETTING_KEYS:
@@ -489,6 +492,46 @@ def run_now():
         flash(f"Error: {str(e)}", "error")
         logger.error(f"Manual run failed: {e}", exc_info=True)
     return redirect(url_for("dashboard"))
+
+
+@app.route("/test-email", methods=["POST"])
+@login_required
+def test_email():
+    settings = load_settings()
+    recipients_raw = settings.get("RECIPIENT_EMAILS", "")
+    recipients = [e.strip() for e in recipients_raw.split(",") if e.strip()]
+
+    has_resend = bool(settings.get("RESEND_API_KEY"))
+    has_smtp = bool(settings.get("SMTP_USER") and settings.get("SMTP_PASSWORD"))
+
+    if not has_resend and not has_smtp:
+        flash("Email not configured — enter a Resend API key or SMTP credentials in Settings.", "error")
+        return redirect(url_for("settings_page"))
+    if not recipients:
+        flash("No recipient emails configured in Settings.", "error")
+        return redirect(url_for("settings_page"))
+
+    try:
+        sender = EmailSender(
+            smtp_host=settings.get("SMTP_HOST", "smtp.gmail.com"),
+            smtp_port=int(settings.get("SMTP_PORT", "587")),
+            smtp_user=settings.get("SMTP_USER", ""),
+            smtp_password=settings.get("SMTP_PASSWORD", ""),
+            from_email=settings.get("FROM_EMAIL", settings.get("SMTP_USER", "")),
+            resend_api_key=settings.get("RESEND_API_KEY", ""),
+        )
+        html = """<div style="font-family:sans-serif;padding:40px;text-align:center;">
+            <h1 style="color:#6366f1;">TPZ Ads Digest</h1>
+            <p style="font-size:18px;color:#333;">Email is working! Your daily digest will arrive here.</p>
+            <p style="color:#888;font-size:13px;">This is a test email sent from your Ads Digest dashboard.</p>
+        </div>"""
+        sender.send(to_emails=recipients, subject="TPZ Ads Digest — Test Email", html_body=html)
+        flash(f"Test email sent to {', '.join(recipients)}!", "success")
+    except Exception as e:
+        flash(f"Email failed: {e}", "error")
+        logger.error(f"Test email failed: {e}", exc_info=True)
+
+    return redirect(url_for("settings_page"))
 
 
 @app.route("/health")
