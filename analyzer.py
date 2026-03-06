@@ -18,11 +18,11 @@ class AIAnalyzer:
 
     async def analyze(
         self, meta_data: dict, google_data: dict, shopify_data: dict,
-        date: str, brand: str, comparison: dict = None,
+        date: str, brand: str, comparison: dict = None, klaviyo_data: dict = None,
     ) -> dict:
         import anthropic
 
-        prompt = self._build_prompt(meta_data, google_data, shopify_data, date, brand, comparison)
+        prompt = self._build_prompt(meta_data, google_data, shopify_data, date, brand, comparison, klaviyo_data)
 
         client = anthropic.Anthropic(api_key=self.api_key)
         message = client.messages.create(
@@ -92,13 +92,24 @@ class AIAnalyzer:
 
     def _build_prompt(
         self, meta_data: dict, google_data: dict, shopify_data: dict,
-        date: str, brand: str, comparison: dict = None,
+        date: str, brand: str, comparison: dict = None, klaviyo_data: dict = None,
     ) -> str:
         comparison_section = self._build_comparison_section(comparison)
 
-        return f"""You are a senior performance marketing analyst for {brand}, a direct-to-consumer CPG brand. Analyze the following daily performance data from all three sources and provide strategic insights.
+        klaviyo_section = ""
+        if klaviyo_data and klaviyo_data.get("summary", {}).get("emails_sent", 0) > 0:
+            klaviyo_section = f"""
+## KLAVIYO (EMAIL/SMS MARKETING) DATA
+```json
+{json.dumps(klaviyo_data, indent=2, default=str)}
+```
+"""
+
+        return f"""You are a senior performance marketing analyst for {brand}, a direct-to-consumer CPG brand. Analyze the following daily performance data from all sources and provide strategic insights.
 
 IMPORTANT: Shopify is the SOURCE OF TRUTH for actual revenue. Ad platforms (Meta/Google) often over-count conversions because they both try to take credit for the same sale. Always compare what the ad platforms claim vs what Shopify actually recorded.
+
+IMPORTANT: When Klaviyo data is available, analyze how email/SMS marketing contributes to the overall revenue mix. Compare Klaviyo-attributed revenue against ad-attributed revenue to understand the full marketing picture.
 
 IMPORTANT: When comparison data is available, include Day-over-Day (DoD) and Week-over-Week (WoW) trend analysis throughout your insights. Call out significant movements with percentage changes.
 
@@ -118,6 +129,7 @@ IMPORTANT: When comparison data is available, include Day-over-Day (DoD) and Wee
 ```json
 {json.dumps(shopify_data, indent=2, default=str)}
 ```
+{klaviyo_section}
 {comparison_section}
 
 Provide your analysis as a JSON object with EXACTLY these keys:
@@ -130,6 +142,8 @@ Provide your analysis as a JSON object with EXACTLY these keys:
     "google_analysis": "Google Ads performance. Search impression share, CPC trends, conversion rates, campaign-level performance. Note DoD/WoW changes if comparison data available.",
 
     "shopify_analysis": "Shopify store health. Orders, AOV trends, new vs returning customer mix, top products, discount code impact on margins. Include DoD/WoW order and revenue trends.",
+
+    "klaviyo_analysis": "If Klaviyo data is present: email/SMS marketing performance. Open rates, click rates, revenue attributed to email vs paid ads. Flow performance. How email marketing fits into the overall revenue mix. If no Klaviyo data, write N/A.",
 
     "creative_insights": "Which ad creatives/formats are performing best and worst. Creative fatigue signals.",
 
