@@ -72,6 +72,20 @@
         </div>
     </div>
 
+    <!-- Klaviyo -->
+    <div class="card">
+        <div class="section-title" style="color:#ec4899;">📧 Klaviyo <span class="badge badge-yellow" style="margin-left:8px;">Optional</span></div>
+        <p style="font-size:12px;color:#6b7280;margin-bottom:16px;">Adds email/SMS performance and Klaviyo-attributed revenue to your digest.</p>
+        <div class="form-group">
+            <label class="form-label">Private API Key</label>
+            <input type="password" name="KLAVIYO_API_KEY" class="form-input {{ 'has-value' if settings.KLAVIYO_API_KEY }}" value="{{ settings.KLAVIYO_API_KEY }}" placeholder="pk_...">
+            <div class="form-help">From Klaviyo → Settings → API Keys → Create Private API Key (read-only scopes are fine)</div>
+            {% if masked.KLAVIYO_API_KEY and settings.KLAVIYO_API_KEY %}
+                <div class="form-help">Current: {{ masked.KLAVIYO_API_KEY }}</div>
+            {% endif %}
+        </div>
+    </div>
+
     <!-- Google Ads -->
     <div class="card">
         <div class="section-title" style="color:#f59e0b;">🔍 Google Ads <span class="badge badge-yellow" style="margin-left:8px;">Optional</span></div>
