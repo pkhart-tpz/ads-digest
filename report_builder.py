@@ -36,6 +36,7 @@ class ReportBuilder:
         date: str,
         brand: str,
         comparison: dict = None,
+        klaviyo_data: dict = None,
     ) -> str:
 
         # ── Extract key metrics ──────────────────────────────────
@@ -84,6 +85,46 @@ class ReportBuilder:
 
         # Discount codes
         discount_html = self._build_discount_rows(shopify_data.get("discount_codes", {}))
+
+        # Klaviyo data
+        kl_summary = (klaviyo_data or {}).get("summary", {})
+        kl_emails_sent = kl_summary.get("emails_sent", 0)
+        kl_opened = kl_summary.get("emails_opened", 0)
+        kl_clicked = kl_summary.get("emails_clicked", 0)
+        kl_open_rate = kl_summary.get("open_rate", 0)
+        kl_click_rate = kl_summary.get("click_rate", 0)
+        kl_revenue = kl_summary.get("revenue_attributed", 0)
+        kl_unsubscribes = kl_summary.get("unsubscribes", 0)
+
+        klaviyo_html = ""
+        if kl_emails_sent > 0 or kl_revenue > 0:
+            klaviyo_html = f"""
+    <!-- Klaviyo Email/SMS -->
+    <div style="background:#111128;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #2a2a4e;">
+        <div style="font-size:13px;font-weight:700;color:#ec4899;letter-spacing:1px;text-transform:uppercase;margin-bottom:16px;">📧 Klaviyo Email/SMS</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:100px;">
+                <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.8px;">Emails Sent</div>
+                <div style="font-size:20px;font-weight:800;color:#fff;">{kl_emails_sent:,}</div>
+            </div>
+            <div style="flex:1;min-width:100px;">
+                <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.8px;">Open Rate</div>
+                <div style="font-size:20px;font-weight:800;color:{'#4ade80' if kl_open_rate >= 25 else '#fbbf24' if kl_open_rate >= 15 else '#f87171'};">{kl_open_rate}%</div>
+            </div>
+            <div style="flex:1;min-width:100px;">
+                <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.8px;">Click Rate</div>
+                <div style="font-size:20px;font-weight:800;color:{'#4ade80' if kl_click_rate >= 3 else '#fbbf24' if kl_click_rate >= 1.5 else '#f87171'};">{kl_click_rate}%</div>
+            </div>
+            <div style="flex:1;min-width:100px;">
+                <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.8px;">Revenue</div>
+                <div style="font-size:20px;font-weight:800;color:#4ade80;">${kl_revenue:,.2f}</div>
+            </div>
+            <div style="flex:1;min-width:100px;">
+                <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.8px;">Unsubscribes</div>
+                <div style="font-size:20px;font-weight:800;color:{'#f87171' if kl_unsubscribes > 10 else '#fbbf24' if kl_unsubscribes > 3 else '#4ade80'};">{kl_unsubscribes}</div>
+            </div>
+        </div>
+    </div>"""
 
         # Anomalies
         anomalies = analysis.get("anomalies", [])
@@ -308,6 +349,8 @@ class ReportBuilder:
         </table>
     </div>
 
+    {klaviyo_html}
+
     <!-- Top Products -->
     <div style="background:#111128;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #2a2a4e;">
         <div style="font-size:13px;font-weight:700;color:#a855f7;letter-spacing:1px;text-transform:uppercase;margin-bottom:16px;">🏆 Top Products (Shopify)</div>
@@ -346,6 +389,10 @@ class ReportBuilder:
     <div style="background:#111128;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #2a2a4e;">
         <div style="font-size:13px;font-weight:700;color:#6366f1;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;">📦 Shopify Analysis</div>
         <div style="font-size:14px;color:#d1d5db;line-height:1.7;">{analysis.get('shopify_analysis', 'N/A')}</div>
+    </div>
+    <div style="background:#111128;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #2a2a4e;">
+        <div style="font-size:13px;font-weight:700;color:#ec4899;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;">📧 Klaviyo Analysis</div>
+        <div style="font-size:14px;color:#d1d5db;line-height:1.7;">{analysis.get('klaviyo_analysis', 'N/A')}</div>
     </div>
     <div style="background:#111128;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #2a2a4e;">
         <div style="font-size:13px;font-weight:700;color:#6366f1;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;">🔀 Attribution Gap</div>
