@@ -101,7 +101,24 @@
     <!-- Email -->
     <div class="card">
         <div class="section-title" style="color:#ec4899;">✉️ Email Delivery</div>
-        <p style="font-size:12px;color:#6b7280;margin-bottom:16px;">For Gmail, use an app password (not your regular password).</p>
+
+        <!-- Resend (recommended for Railway) -->
+        <div style="background:#0a0a18;border:1px solid #166534;border-radius:8px;padding:16px;margin-bottom:16px;">
+            <div style="font-size:12px;font-weight:700;color:#4ade80;margin-bottom:8px;">✅ Recommended: Resend (works on Railway)</div>
+            <p style="font-size:11px;color:#6b7280;margin-bottom:12px;">Free 100 emails/day. Get your API key from resend.com/api-keys</p>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Resend API Key</label>
+                <input type="password" name="RESEND_API_KEY" class="form-input {{ 'has-value' if settings.RESEND_API_KEY }}" value="{{ settings.RESEND_API_KEY }}" placeholder="re_...">
+                <div class="form-help">From resend.com → API Keys. If set, this is used instead of SMTP.</div>
+                {% if masked.RESEND_API_KEY and settings.RESEND_API_KEY %}
+                    <div class="form-help">Current: {{ masked.RESEND_API_KEY }}</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- SMTP fallback -->
+        <details style="margin-bottom:12px;">
+            <summary style="font-size:12px;color:#6b7280;cursor:pointer;margin-bottom:12px;">Alternative: SMTP (Gmail) — does not work on Railway</summary>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
             <div class="form-group">
                 <label class="form-label">SMTP Host</label>
@@ -124,9 +141,12 @@
                 <div class="form-help">Current: {{ masked.SMTP_PASSWORD }}</div>
             {% endif %}
         </div>
+        </details>
+
         <div class="form-group">
             <label class="form-label">From Email <span style="color:#ef4444">*</span></label>
             <input type="text" name="FROM_EMAIL" class="form-input {{ 'has-value' if settings.FROM_EMAIL }}" value="{{ settings.FROM_EMAIL }}" placeholder="you@gmail.com">
+            <div class="form-help">For Resend: use an address from a domain you've verified at resend.com/domains (or onboarding@resend.dev for testing)</div>
         </div>
         <div class="form-group">
             <label class="form-label">Send Reports To <span style="color:#ef4444">*</span></label>
@@ -163,4 +183,17 @@
     </div>
 
 </form>
+
+<!-- Test Email (separate form, outside settings form) -->
+<div class="card" style="margin-top:16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+            <div style="font-size:14px;font-weight:700;color:#ec4899;">📧 Test Email Delivery</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:4px;">Save your settings first, then send a test email to verify everything works.</div>
+        </div>
+        <form method="POST" action="{{ url_for('test_email') }}">
+            <button type="submit" class="btn btn-primary btn-sm">Send Test Email</button>
+        </form>
+    </div>
+</div>
 {% endblock %}
