@@ -286,6 +286,9 @@ async def run_digest_async(date: str = None, test_mode: bool = False):
                 )
                 klaviyo_data = kl_client.get_daily_report(date)
                 logger.info(f"Klaviyo: {klaviyo_data['summary']['emails_sent']} emails sent, ${klaviyo_data['summary']['revenue_attributed']} attributed revenue")
+                # Surface any per-metric errors
+                for kl_err in klaviyo_data.get("errors", []):
+                    errors.append(f"Klaviyo: {kl_err}")
             except Exception as e:
                 errors.append(f"Klaviyo error: {e}")
                 logger.error(f"Klaviyo error: {e}", exc_info=True)
