@@ -1,9 +1,8 @@
 """
-Klaviyo API client — pulls email/SMS campaign and flow performance
+Klaviyo API client — pulls email/SMS marketing performance
 for inclusion in the daily ads digest.
 
-Uses Klaviyo's private API key authentication.
-API docs: https://developers.klaviyo.com/en/reference/api_overview
+Uses Klaviyo private API key authentication.
 """
 
 import requests
@@ -26,24 +25,24 @@ class KlaviyoClient:
             "Content-Type": "application/json",
             "revision": API_REVISION,
         })
+        self._metric_cache = {}
 
     def _get(self, endpoint: str, params: dict = None) -> dict:
         resp = self.session.get(f"{BASE_URL}/{endpoint}", params=params, timeout=30)
         if not resp.ok:
-            error = resp.json() if "json" in resp.headers.get("content-type", "") else resp.text
-            raise Exception(f"Klaviyo API {resp.status_code}: {error}")
+            error = resp.text[:500]
+            raise Exception(f"Klaviyo GET {endpoint} {resp.status_code}: {error}")
         return resp.json()
 
     def _post(self, endpoint: str, payload: dict) -> dict:
         resp = self.session.post(f"{BASE_URL}/{endpoint}", json=payload, timeout=30)
         if not resp.ok:
-            error = resp.json() if "json" in resp.headers.get("content-type", "") else resp.text
-            raise Exception(f"Klaviyo API {resp.status_code}: {error}")
+            error = resp.text[:500]
+            raise Exception(f"Klaviyo POST {endpoint} {resp.status_code}: {error}")
         return resp.json()
 
     def get_daily_report(self, date: str) -> dict:
         """Pull a full daily Klaviyo performance report."""
-        # Date range for the target day
         start = f"{date}T00:00:00+00:00"
         end_date = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
         end = f"{end_date}T00:00:00+00:00"
@@ -68,36 +67,69 @@ class KlaviyoClient:
                 "emails_sent": 0,
                 "revenue_attributed": 0,
             },
+            "available_metrics": [],
+            "errors": [],
         }
 
-        # ── Query metric aggregates for the day ──────────────
-        # Email metrics
-        email_metrics = self._query_email_metrics(start, end)
-        if email_metrics:
-            report["summary"].update(email_metrics)
-
-        # Revenue from Klaviyo-attributed orders
-        revenue_data = self._query_revenue_metrics(start, end)
-        if revenue_data:
-            report["summary"]["revenue_attributed"] = revenue_data.get("revenue", 0)
-
-        # ── Recent campaigns ─────────────────────────────────
+        # Step 1: Load all available metrics so we know what's in this account
         try:
-            campaigns = self._get_recent_campaigns(date)
-            report["campaigns"] = campaigns
+            self._load_metrics()
+            report["available_metrics"] = list(self._metric_cache.keys())
+            logger.info(f"Klaviyo: Found {len(self._metric_cache)} metrics: {', '.join(list(self._metric_cache.keys())[:15])}")
         except Exception as e:
-            logger.warning(f"Failed to fetch campaigns: {e}")
+            report["errors"].append(f"Failed to load metrics: {e}")
+            logger.error(f"Klaviyo metrics load failed: {e}")
+            return report
 
-        # ── Flow performance ─────────────────────────────────
-        try:
-            flow_data = self._query_flow_metrics(start, end)
-            if flow_data:
-                report["flows_summary"] = flow_data
-        except Exception as e:
-            logger.warning(f"Failed to fetch flow metrics: {e}")
+        # Step 2: Query each metric we care about
+        # Map of what we want -> possible metric names in Klaviyo
+        metric_map = {
+            "emails_delivered": ["Received Email"],
+            "emails_opened": ["Opened Email"],
+            "emails_clicked": ["Clicked Email"],
+            "unsubscribes": ["Unsubscribed", "Unsubscribed from List"],
+            "sms_sent": ["Received SMS"],
+            "sms_clicked": ["Clicked SMS"],
+        }
 
-        # Calculate rates
-        sent = report["summary"]["emails_sent"]
+        for key, possible_names in metric_map.items():
+            metric_id = None
+            metric_name = None
+            for name in possible_names:
+                if name in self._metric_cache:
+                    metric_id = self._metric_cache[name]
+                    metric_name = name
+                    break
+
+            if not metric_id:
+                logger.debug(f"Klaviyo: No metric found for {key} (tried: {possible_names})")
+                continue
+
+            try:
+                count = self._query_metric_count(metric_id, start, end)
+                report["summary"][key] = count
+                if key == "emails_delivered":
+                    report["summary"]["emails_sent"] = count
+                logger.info(f"Klaviyo {metric_name}: {count}")
+            except Exception as e:
+                report["errors"].append(f"{metric_name}: {e}")
+                logger.warning(f"Klaviyo metric {metric_name} failed: {e}")
+
+        # Step 3: Revenue from Placed Order
+        if "Placed Order" in self._metric_cache:
+            try:
+                rev_data = self._query_metric_revenue(
+                    self._metric_cache["Placed Order"], start, end
+                )
+                report["summary"]["revenue_attributed"] = rev_data.get("revenue", 0)
+                logger.info(f"Klaviyo revenue: ${rev_data.get('revenue', 0):.2f}")
+            except Exception as e:
+                report["errors"].append(f"Placed Order revenue: {e}")
+                logger.warning(f"Klaviyo revenue query failed: {e}")
+        else:
+            logger.info("Klaviyo: No 'Placed Order' metric found")
+
+        # Step 4: Calculate rates
         delivered = report["summary"]["emails_delivered"]
         opened = report["summary"]["emails_opened"]
         clicked = report["summary"]["emails_clicked"]
@@ -108,172 +140,82 @@ class KlaviyoClient:
 
         return report
 
-    def _query_email_metrics(self, start: str, end: str) -> dict:
-        """Query aggregate email metrics for a time period."""
-        metrics_to_query = [
-            ("Received Email", "received"),
-            ("Opened Email", "opened"),
-            ("Clicked Email", "clicked"),
-            ("Unsubscribed", "unsubscribed"),
-        ]
+    def _load_metrics(self):
+        """Fetch all metrics and cache name -> ID mapping."""
+        if self._metric_cache:
+            return
 
-        results = {}
-        for metric_name, key in metrics_to_query:
-            try:
-                data = self._post("metric-aggregates", {
-                    "data": {
-                        "type": "metric-aggregate",
-                        "attributes": {
-                            "metric_id": self._get_metric_id(metric_name),
-                            "measurements": ["count"],
-                            "filter": [
-                                "greater-or-equal(datetime," + start + ")",
-                                "less-than(datetime," + end + ")",
-                            ],
-                            "interval": "day",
-                        }
-                    }
-                })
-                count = self._extract_aggregate_value(data)
-                if key == "received":
-                    results["emails_delivered"] = count
-                    results["emails_sent"] = count  # Approximate
-                elif key == "opened":
-                    results["emails_opened"] = count
-                elif key == "clicked":
-                    results["emails_clicked"] = count
-                elif key == "unsubscribed":
-                    results["unsubscribes"] = count
-            except Exception as e:
-                logger.debug(f"Metric {metric_name} query failed: {e}")
+        cursor = None
+        while True:
+            params = {"page[size]": 50}
+            if cursor:
+                params["page[cursor]"] = cursor
 
-        return results
+            data = self._get("metrics", params=params)
 
-    def _query_revenue_metrics(self, start: str, end: str) -> dict:
-        """Query Klaviyo-attributed revenue."""
-        try:
-            metric_id = self._get_metric_id("Placed Order")
-            data = self._post("metric-aggregates", {
-                "data": {
-                    "type": "metric-aggregate",
-                    "attributes": {
-                        "metric_id": metric_id,
-                        "measurements": ["sum_value", "count"],
-                        "filter": [
-                            "greater-or-equal(datetime," + start + ")",
-                            "less-than(datetime," + end + ")",
-                        ],
-                        "interval": "day",
-                    }
-                }
-            })
-
-            results = data.get("data", {}).get("attributes", {}).get("data", [])
-            revenue = 0
-            orders = 0
-            for row in results:
-                measurements = row.get("measurements", {})
-                revenue += measurements.get("sum_value", 0)
-                orders += measurements.get("count", 0)
-
-            return {"revenue": round(revenue, 2), "orders": orders}
-        except Exception as e:
-            logger.debug(f"Revenue query failed: {e}")
-            return {}
-
-    def _query_flow_metrics(self, start: str, end: str) -> dict:
-        """Query flow-attributed email sends and revenue."""
-        # Get flow-attributed revenue via "Placed Order" filtered by $flow
-        try:
-            metric_id = self._get_metric_id("Received Email")
-            data = self._post("metric-aggregates", {
-                "data": {
-                    "type": "metric-aggregate",
-                    "attributes": {
-                        "metric_id": metric_id,
-                        "measurements": ["count"],
-                        "group_by": ["$flow"],
-                        "filter": [
-                            "greater-or-equal(datetime," + start + ")",
-                            "less-than(datetime," + end + ")",
-                        ],
-                        "interval": "day",
-                    }
-                }
-            })
-
-            results = data.get("data", {}).get("attributes", {}).get("data", [])
-            total_flow_sends = 0
-            for row in results:
-                flow_id = row.get("dimensions", {}).get("$flow")
-                if flow_id:  # Only count rows with a flow ID
-                    measurements = row.get("measurements", {})
-                    total_flow_sends += measurements.get("count", 0)
-
-            return {
-                "emails_sent": total_flow_sends,
-                "revenue_attributed": 0,  # Would need separate query
-            }
-        except Exception as e:
-            logger.debug(f"Flow metrics query failed: {e}")
-            return {"emails_sent": 0, "revenue_attributed": 0}
-
-    def _get_recent_campaigns(self, date: str) -> list:
-        """Get campaigns sent on or near the target date."""
-        try:
-            data = self._get("campaigns", params={
-                "filter": f"equals(messages.channel,'email')",
-                "sort": "-send_time",
-                "page[size]": 10,
-            })
-
-            campaigns = []
-            for item in data.get("data", []):
-                attrs = item.get("attributes", {})
-                send_time = attrs.get("send_time", "")
-
-                # Only include campaigns from the target date
-                if send_time and date in send_time:
-                    campaigns.append({
-                        "name": attrs.get("name", "Unknown"),
-                        "status": attrs.get("status", ""),
-                        "send_time": send_time,
-                        "id": item.get("id", ""),
-                    })
-
-            return campaigns
-        except Exception as e:
-            logger.debug(f"Campaign fetch failed: {e}")
-            return []
-
-    def _get_metric_id(self, metric_name: str) -> str:
-        """Look up a metric ID by name. Caches results."""
-        if not hasattr(self, "_metric_cache"):
-            self._metric_cache = {}
-
-        if metric_name in self._metric_cache:
-            return self._metric_cache[metric_name]
-
-        # Fetch all metrics and cache
-        try:
-            data = self._get("metrics", params={"page[size]": 50})
             for item in data.get("data", []):
                 name = item.get("attributes", {}).get("name", "")
-                self._metric_cache[name] = item.get("id", "")
-        except Exception as e:
-            logger.error(f"Failed to fetch metrics list: {e}")
+                mid = item.get("id", "")
+                if name and mid:
+                    self._metric_cache[name] = mid
 
-        if metric_name not in self._metric_cache:
-            raise Exception(f"Metric '{metric_name}' not found in Klaviyo account")
+            # Check for next page
+            next_link = data.get("links", {}).get("next")
+            if not next_link:
+                break
+            # Extract cursor from next link
+            import urllib.parse
+            parsed = urllib.parse.urlparse(next_link)
+            qs = urllib.parse.parse_qs(parsed.query)
+            cursor = qs.get("page[cursor]", [None])[0]
+            if not cursor:
+                break
 
-        return self._metric_cache[metric_name]
+    def _query_metric_count(self, metric_id: str, start: str, end: str) -> int:
+        """Query count of a metric in a time range."""
+        data = self._post("metric-aggregates", {
+            "data": {
+                "type": "metric-aggregate",
+                "attributes": {
+                    "metric_id": metric_id,
+                    "measurements": ["count"],
+                    "filter": [
+                        f"greater-or-equal(datetime,{start})",
+                        f"less-than(datetime,{end})",
+                    ],
+                    "interval": "day",
+                }
+            }
+        })
 
-    @staticmethod
-    def _extract_aggregate_value(data: dict) -> float:
-        """Extract a single aggregate value from metric-aggregates response."""
-        results = data.get("data", {}).get("attributes", {}).get("data", [])
         total = 0
-        for row in results:
+        for row in data.get("data", {}).get("attributes", {}).get("data", []):
             measurements = row.get("measurements", {})
             total += measurements.get("count", 0)
-        return total
+        return int(total)
+
+    def _query_metric_revenue(self, metric_id: str, start: str, end: str) -> dict:
+        """Query revenue (sum_value) for a metric like Placed Order."""
+        data = self._post("metric-aggregates", {
+            "data": {
+                "type": "metric-aggregate",
+                "attributes": {
+                    "metric_id": metric_id,
+                    "measurements": ["sum_value", "count"],
+                    "filter": [
+                        f"greater-or-equal(datetime,{start})",
+                        f"less-than(datetime,{end})",
+                    ],
+                    "interval": "day",
+                }
+            }
+        })
+
+        revenue = 0
+        orders = 0
+        for row in data.get("data", {}).get("attributes", {}).get("data", []):
+            measurements = row.get("measurements", {})
+            revenue += measurements.get("sum_value", 0)
+            orders += measurements.get("count", 0)
+
+        return {"revenue": round(revenue, 2), "orders": int(orders)}
